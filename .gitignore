@@ -1,0 +1,6 @@
+bin/
+obj/
+.vs/
+*.user
+Data/medications.json
+Data/sleep-diary.json

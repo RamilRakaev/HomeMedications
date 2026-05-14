@@ -1,0 +1,591 @@
+@page "/sleep"
+@rendermode InteractiveServer
+@using HomeMedications.Formatting
+@using HomeMedications.Services
+
+<div class="med-page">
+    <PageTitle>Дневник сна</PageTitle>
+
+    <h1>Дневник сна</h1>
+    <p class="lead">Записи по годам: по умолчанию текущий год, новые сверху. Время сна и бодрствования считаются автоматически. Экспорт в Excel — один лист на год.</p>
+
+    <div class="card med-card sleep-toolbar">
+        <div class="sleep-toolbar__row">
+            <label class="med-label sleep-toolbar__label" for="year">Год</label>
+            <div class="chic-input chic-input--select sleep-year-chic">
+                <select id="year" class="chic-input__control" value="@_selectedYear" @onchange="OnYearChangedAsync">
+                    @foreach (var y in _availableYears)
+                    {
+                        <option value="@y">@y</option>
+                    }
+                </select>
+            </div>
+            @if (_allCount > 0)
+            {
+                <a class="btn btn-secondary btn-sm btn-pill sleep-export" href="/api/sleep-diary/export" target="_blank" rel="noopener">
+                    <span class="btn-inner">Скачать Excel</span>
+                </a>
+            }
+            else
+            {
+                <span class="btn btn-secondary btn-sm btn-pill sleep-export is-disabled" aria-disabled="true" title="Сначала добавьте хотя бы одну запись">
+                    <span class="btn-inner">Скачать Excel</span>
+                </span>
+            }
+        </div>
+        @if (_allCount == 0)
+        {
+            <p class="hint sleep-toolbar__hint">Пока нет записей — экспорт будет недоступен, пока не появятся данные.</p>
+        }
+    </div>
+
+    <div class="card med-card">
+        <h2>Новая запись</h2>
+        <EditForm Model="_draft" OnValidSubmit="AddAsync">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="med-validation-summary" />
+
+            <div class="sleep-form-grid">
+                <div class="sleep-field">
+                    <label class="med-label" for="entryDate">Дата записи</label>
+                    <div class="chic-input chic-input--date">
+                        <span class="chic-input__icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 11h16"/></svg>
+                        </span>
+                        <InputDate id="entryDate" class="chic-input__control" @bind-Value="_draft.EntryDate" />
+                    </div>
+                </div>
+                <div class="sleep-field">
+                    <label class="med-label">Время засыпания вчера</label>
+                    <div class="chic-input chic-input--intakes">
+                        <span class="chic-input__icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v6l4 2"/></svg>
+                        </span>
+                        <input type="time" class="chic-input__control" step="60"
+                               value="@TimeFieldParsing.FormatTimeForInput(_draft.FallAsleepTimeYesterday)"
+                               @onchange="@(e => _draft.FallAsleepTimeYesterday = TimeFieldParsing.ParseTime(e.Value?.ToString()))" />
+                    </div>
+                </div>
+                <div class="sleep-field">
+                    <label class="med-label">Время окончательного пробуждения</label>
+                    <div class="chic-input chic-input--intakes">
+                        <span class="chic-input__icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v6l4 2"/></svg>
+                        </span>
+                        <input type="time" class="chic-input__control" step="60"
+                               value="@TimeFieldParsing.FormatTimeForInput(_draft.FinalWakeTime)"
+                               @onchange="@(e => _draft.FinalWakeTime = TimeFieldParsing.ParseTime(e.Value?.ToString()))" />
+                    </div>
+                </div>
+                <div class="sleep-field">
+                    <label class="med-label" for="nAw">Количество пробуждений посреди сна</label>
+                    <div class="chic-input chic-input--qty">
+                        <span class="chic-input__icon" aria-hidden="true">#</span>
+                        <InputNumber id="nAw" class="chic-input__control" @bind-Value="_draft.NightAwakeningsCount" @bind-Value:after="OnDraftAwakeningsCountChanged" />
+                    </div>
+                </div>
+                <div class="sleep-field sleep-field--full">
+                    <label class="med-label">Время пробуждений</label>
+                    <p class="sleep-field-hint">По одному полю на каждое пробуждение; незаполненные допускаются.</p>
+                    <div class="sleep-awake-list">
+                        @for (var i = 0; i < _draft.NightAwakeningsCount; i++)
+                        {
+                            var idx = i;
+                            <div class="chic-input chic-input--intakes sleep-awake-item">
+                                <span class="chic-input__icon sleep-awake-num" aria-hidden="true">@(idx + 1)</span>
+                                <input type="time" class="chic-input__control" step="60"
+                                       value="@FormatAwakeningTime(_draft, idx)"
+                                       @onchange="@(e => OnDraftAwakeningTimeChanged(idx, e))" />
+                            </div>
+                        }
+                    </div>
+                </div>
+                <div class="sleep-field">
+                    <label class="med-label" for="attempts">Попыток уснуть</label>
+                    <div class="chic-input chic-input--qty">
+                        <span class="chic-input__icon" aria-hidden="true">#</span>
+                        <InputNumber id="attempts" class="chic-input__control" @bind-Value="_draft.FallAsleepAttempts" />
+                    </div>
+                </div>
+                <div class="sleep-field">
+                    <label class="med-label">Еда перед сном</label>
+                    <div class="chic-input chic-input--select">
+                        <select class="chic-input__control" value="@TriStateBool.Serialize(_draft.FoodBeforeSleep)" @onchange="@(e => _draft.FoodBeforeSleep = TriStateBool.Deserialize(e.Value?.ToString()))">
+                            <option value="@TriStateBool.Unset">—</option>
+                            <option value="@TriStateBool.No">Нет</option>
+                            <option value="@TriStateBool.Yes">Да</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="sleep-field">
+                    <label class="med-label">Усталость перед сном</label>
+                    <div class="chic-input chic-input--select">
+                        <select class="chic-input__control" value="@SerializeFatigue(_draft.FatigueBeforeSleep)" @onchange="@(e => _draft.FatigueBeforeSleep = ParseFatigue(e.Value?.ToString()))">
+                            <option value="">—</option>
+                            <option value="None">Нет</option>
+                            <option value="Strong">Сильная</option>
+                            <option value="Medium">Средняя</option>
+                            <option value="Weak">Слабая</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="sleep-field">
+                    <label class="med-label">Лежание после пробуждения</label>
+                    <div class="chic-input chic-input--select">
+                        <select class="chic-input__control" value="@TriStateBool.Serialize(_draft.LyingAfterWake)" @onchange="@(e => _draft.LyingAfterWake = TriStateBool.Deserialize(e.Value?.ToString()))">
+                            <option value="@TriStateBool.Unset">—</option>
+                            <option value="@TriStateBool.No">Нет</option>
+                            <option value="@TriStateBool.Yes">Да</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="sleep-field">
+                    <label class="med-label">Волнение/мысли перед сном</label>
+                    <div class="chic-input chic-input--select">
+                        <select class="chic-input__control" value="@TriStateBool.Serialize(_draft.AnxietyBeforeSleep)" @onchange="@(e => _draft.AnxietyBeforeSleep = TriStateBool.Deserialize(e.Value?.ToString()))">
+                            <option value="@TriStateBool.Unset">—</option>
+                            <option value="@TriStateBool.No">Нет</option>
+                            <option value="@TriStateBool.Yes">Да</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="sleep-field">
+                    <label class="med-label">Удовлетворение сном</label>
+                    <div class="chic-input chic-input--select">
+                        <select class="chic-input__control" value="@TriStateBool.Serialize(_draft.SleepSatisfaction)" @onchange="@(e => _draft.SleepSatisfaction = TriStateBool.Deserialize(e.Value?.ToString()))">
+                            <option value="@TriStateBool.Unset">—</option>
+                            <option value="@TriStateBool.No">Нет</option>
+                            <option value="@TriStateBool.Yes">Да</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="sleep-field">
+                    <label class="med-label">Удовлетворение сном спустя пол дня</label>
+                    <div class="chic-input chic-input--select">
+                        <select class="chic-input__control" value="@TriStateBool.Serialize(_draft.SleepSatisfactionHalfDay)" @onchange="OnDraftSleepSatisfactionHalfDayChanged">
+                            <option value="@TriStateBool.Unset">—</option>
+                            <option value="@TriStateBool.No">Нет</option>
+                            <option value="@TriStateBool.Yes">Да</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="sleep-field">
+                    <label class="med-label">Время сна</label>
+                    <div class="chic-input chic-input--readonly">
+                        <span class="chic-input__control sleep-computed">@FormatDur(SleepEntryMetrics.ComputeSleepDuration(_draft))</span>
+                    </div>
+                </div>
+                <div class="sleep-field">
+                    <label class="med-label">Время бодрствования</label>
+                    <div class="chic-input chic-input--readonly">
+                        <span class="chic-input__control sleep-computed">@FormatDur(SleepEntryMetrics.ComputeWakeDuration(_draft, Store.GetByEntryDate(_draft.EntryDate.AddDays(1))))</span>
+                    </div>
+                </div>
+                <div class="sleep-field sleep-field--full">
+                    <label class="med-label" for="comments">Комментарии</label>
+                    <InputTextArea id="comments" class="sleep-textarea" @bind-Value="_draft.Comments" rows="2" />
+                </div>
+                <div class="sleep-field sleep-field--full sleep-actions">
+                    <button type="submit" class="btn btn-primary btn-pill btn-add-table">
+                        <span class="btn-glow" aria-hidden="true"></span>
+                        <span class="btn-pill-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>
+                        </span>
+                        <span class="btn-inner">Добавить запись</span>
+                    </button>
+                </div>
+            </div>
+        </EditForm>
+    </div>
+
+    <div class="card med-card sleep-table-card">
+        <h2>Записи за @_selectedYear год</h2>
+        @if (!string.IsNullOrEmpty(_editError))
+        {
+            <p class="edit-error" role="alert">@_editError</p>
+        }
+        @if (_rows.Count == 0)
+        {
+            <p class="muted">Нет записей за выбранный год.</p>
+        }
+        else
+        {
+            <div class="sleep-table-scroll">
+                <table class="sleep-table">
+                    <thead>
+                        <tr>
+                            <th>Дата<br/>записи</th>
+                            <th>Время засыпания<br/>вчера</th>
+                            <th>Время окончательного<br/>пробуждения</th>
+                            <th>Количество пробуждений<br/>посреди сна</th>
+                            <th>Время<br/>пробуждений</th>
+                            <th>Попыток<br/>уснуть</th>
+                            <th>Еда перед<br/>сном</th>
+                            <th>Усталость перед<br/>сном</th>
+                            <th>Лежание после<br/>пробуждения</th>
+                            <th>Волнение/мысли<br/>перед сном</th>
+                            <th>Удовлетворение<br/>сном</th>
+                            <th>Удовлетворение сном<br/>спустя пол дня</th>
+                            <th>Время<br/>сна</th>
+                            <th>Время<br/>бодрствования</th>
+                            <th>Комментарии</th>
+                            <th class="th-actions">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _rows)
+                        {
+                            var nextRow = Store.GetByEntryDate(row.EntryDate.AddDays(1));
+                            var sleepDur = SleepEntryMetrics.ComputeSleepDuration(row);
+                            var wakeDur = SleepEntryMetrics.ComputeWakeDuration(row, nextRow);
+                            @if (_editModel is not null && _editModel.Id == row.Id)
+                            {
+                                <tr class="row-editing" @key="row.Id">
+                                    <td><InputDate class="table-input" @bind-Value="_editModel.EntryDate" /></td>
+                                    <td><input type="time" class="table-input" step="60" value="@TimeFieldParsing.FormatTimeForInput(_editModel.FallAsleepTimeYesterday)" @onchange="@(e => _editModel.FallAsleepTimeYesterday = TimeFieldParsing.ParseTime(e.Value?.ToString()))" /></td>
+                                    <td><input type="time" class="table-input" step="60" value="@TimeFieldParsing.FormatTimeForInput(_editModel.FinalWakeTime)" @onchange="@(e => _editModel.FinalWakeTime = TimeFieldParsing.ParseTime(e.Value?.ToString()))" /></td>
+                                    <td><InputNumber class="table-input" @bind-Value="_editModel.NightAwakeningsCount" @bind-Value:after="OnEditAwakeningsCountChanged" /></td>
+                                    <td class="sleep-td-multiline">
+                                        @for (var i = 0; i < _editModel.NightAwakeningsCount; i++)
+                                        {
+                                            var idx = i;
+                                            <div class="sleep-inline-time">
+                                                <input type="time" class="table-input" step="60" value="@FormatAwakeningTime(_editModel, idx)" @onchange="@(e => OnEditAwakeningTimeChanged(idx, e))" />
+                                            </div>
+                                        }
+                                    </td>
+                                    <td><InputNumber class="table-input" @bind-Value="_editModel.FallAsleepAttempts" /></td>
+                                    <td>
+                                        <select class="table-input" value="@TriStateBool.Serialize(_editModel.FoodBeforeSleep)" @onchange="@(e => _editModel.FoodBeforeSleep = TriStateBool.Deserialize(e.Value?.ToString()))">
+                                            <option value="@TriStateBool.Unset">—</option>
+                                            <option value="@TriStateBool.No">Нет</option>
+                                            <option value="@TriStateBool.Yes">Да</option>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <select class="table-input" value="@SerializeFatigue(_editModel.FatigueBeforeSleep)" @onchange="@(e => _editModel.FatigueBeforeSleep = ParseFatigue(e.Value?.ToString()))">
+                                            <option value="">—</option>
+                                            <option value="None">Нет</option>
+                                            <option value="Strong">Сильная</option>
+                                            <option value="Medium">Средняя</option>
+                                            <option value="Weak">Слабая</option>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <select class="table-input" value="@TriStateBool.Serialize(_editModel.LyingAfterWake)" @onchange="@(e => _editModel.LyingAfterWake = TriStateBool.Deserialize(e.Value?.ToString()))">
+                                            <option value="@TriStateBool.Unset">—</option>
+                                            <option value="@TriStateBool.No">Нет</option>
+                                            <option value="@TriStateBool.Yes">Да</option>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <select class="table-input" value="@TriStateBool.Serialize(_editModel.AnxietyBeforeSleep)" @onchange="@(e => _editModel.AnxietyBeforeSleep = TriStateBool.Deserialize(e.Value?.ToString()))">
+                                            <option value="@TriStateBool.Unset">—</option>
+                                            <option value="@TriStateBool.No">Нет</option>
+                                            <option value="@TriStateBool.Yes">Да</option>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <select class="table-input" value="@TriStateBool.Serialize(_editModel.SleepSatisfaction)" @onchange="@(e => _editModel.SleepSatisfaction = TriStateBool.Deserialize(e.Value?.ToString()))">
+                                            <option value="@TriStateBool.Unset">—</option>
+                                            <option value="@TriStateBool.No">Нет</option>
+                                            <option value="@TriStateBool.Yes">Да</option>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <select class="table-input" value="@TriStateBool.Serialize(_editModel.SleepSatisfactionHalfDay)" @onchange="@(e => _editModel.SleepSatisfactionHalfDay = TriStateBool.Deserialize(e.Value?.ToString()))">
+                                            <option value="@TriStateBool.Unset">—</option>
+                                            <option value="@TriStateBool.No">Нет</option>
+                                            <option value="@TriStateBool.Yes">Да</option>
+                                        </select>
+                                    </td>
+                                    <td><span class="@CellClassForSleepDur(SleepEntryMetrics.ComputeSleepDuration(_editModel))">@FormatDur(SleepEntryMetrics.ComputeSleepDuration(_editModel))</span></td>
+                                    <td>@FormatDur(SleepEntryMetrics.ComputeWakeDuration(_editModel, Store.GetByEntryDate(_editModel.EntryDate.AddDays(1))))</td>
+                                    <td><InputText class="table-input" @bind-Value="_editModel.Comments" /></td>
+                                    <td>
+                                        <div class="cell-actions">
+                                            <button type="button" class="btn btn-success btn-sm btn-pill" @onclick="SaveEditAsync"><span class="btn-inner">Сохранить</span></button>
+                                            <button type="button" class="btn btn-ghost btn-sm btn-pill" @onclick="CancelEdit"><span class="btn-inner">Отмена</span></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                <tr class="@(_editModel is not null ? "row-dimmed" : null)" @key="row.Id">
+                                    <td>@SleepEntryFormatting.Date(row.EntryDate)</td>
+                                    <td>@SleepEntryFormatting.Time(row.FallAsleepTimeYesterday)</td>
+                                    <td>@SleepEntryFormatting.Time(row.FinalWakeTime)</td>
+                                    <td>@row.NightAwakeningsCount</td>
+                                    <td class="sleep-td-multiline">@SleepEntryFormatting.AwakeningTimesDisplay(row.AwakeningTimes)</td>
+                                    <td>@row.FallAsleepAttempts</td>
+                                    <td><span class="@CellClassForYesNo(row.FoodBeforeSleep)">@SleepEntryFormatting.YesNo(row.FoodBeforeSleep)</span></td>
+                                    <td><span class="@CellClassForFatigue(row.FatigueBeforeSleep)">@SleepEntryFormatting.Fatigue(row.FatigueBeforeSleep)</span></td>
+                                    <td><span class="@CellClassForYesNo(row.LyingAfterWake)">@SleepEntryFormatting.YesNo(row.LyingAfterWake)</span></td>
+                                    <td><span class="@CellClassForYesNo(row.AnxietyBeforeSleep)">@SleepEntryFormatting.YesNo(row.AnxietyBeforeSleep)</span></td>
+                                    <td><span class="@CellClassForSat(row.SleepSatisfaction)">@SleepEntryFormatting.YesNo(row.SleepSatisfaction)</span></td>
+                                    <td><span class="@CellClassForHalfDay(row.SleepSatisfactionHalfDay)">@SleepEntryFormatting.YesNo(row.SleepSatisfactionHalfDay)</span></td>
+                                    <td><span class="@CellClassForSleepDur(sleepDur)">@SleepEntryFormatting.Duration(sleepDur)</span></td>
+                                    <td>@SleepEntryFormatting.Duration(wakeDur)</td>
+                                    <td class="sleep-comments">@(string.IsNullOrWhiteSpace(row.Comments) ? "—" : row.Comments)</td>
+                                    <td>
+                                        <div class="cell-actions">
+                                            <button type="button" class="btn btn-secondary btn-sm btn-pill" disabled="@(_editModel is not null)" @onclick="() => BeginEdit(row)"><span class="btn-inner">Изменить</span></button>
+                                            <button type="button" class="btn btn-danger btn-sm btn-pill" disabled="@(_editModel is not null)" @onclick="() => DeleteAsync(row.Id)"><span class="btn-inner">Удалить</span></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Inject]
+    private SleepDiaryStore Store { get; set; } = default!;
+
+    private int _selectedYear = DateTime.Today.Year;
+    private List<int> _availableYears = [];
+    private List<SleepEntry> _rows = [];
+    private SleepEntry _draft = CreateEmptyDraft();
+    private SleepEntry? _editModel;
+    private string? _editError;
+    private int _allCount;
+
+    protected override void OnInitialized()
+    {
+        ReloadYearsAndTable();
+    }
+
+    private void ReloadYearsAndTable()
+    {
+        _allCount = Store.GetAll().Count;
+        _availableYears = Store.GetSelectableYearsDescending().ToList();
+        if (!_availableYears.Contains(_selectedYear))
+            _selectedYear = _availableYears.Count > 0 ? _availableYears[0] : DateTime.Today.Year;
+
+        _rows = Store.GetByYear(_selectedYear).ToList();
+    }
+
+    private Task OnYearChangedAsync(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var y))
+            _selectedYear = y;
+        _editModel = null;
+        _editError = null;
+        _rows = Store.GetByYear(_selectedYear).ToList();
+        return Task.CompletedTask;
+    }
+
+    private void OnDraftSleepSatisfactionHalfDayChanged(ChangeEventArgs e)
+    {
+        _draft.SleepSatisfactionHalfDay = TriStateBool.Deserialize(e.Value?.ToString());
+    }
+
+    private void OnDraftAwakeningsCountChanged() => ResizeAwakenings(_draft);
+
+    private void OnEditAwakeningsCountChanged()
+    {
+        if (_editModel is not null)
+            ResizeAwakenings(_editModel);
+    }
+
+    private void OnDraftAwakeningTimeChanged(int index, ChangeEventArgs e)
+    {
+        SetAwakeningAt(_draft, index, TimeFieldParsing.ParseTime(e.Value?.ToString()));
+    }
+
+    private void OnEditAwakeningTimeChanged(int index, ChangeEventArgs e)
+    {
+        if (_editModel is not null)
+            SetAwakeningAt(_editModel, index, TimeFieldParsing.ParseTime(e.Value?.ToString()));
+    }
+
+    private static void ResizeAwakenings(SleepEntry e)
+    {
+        e.NightAwakeningsCount = Math.Clamp(e.NightAwakeningsCount, 0, 1000);
+        while (e.AwakeningTimes.Count < e.NightAwakeningsCount)
+            e.AwakeningTimes.Add(null);
+        while (e.AwakeningTimes.Count > e.NightAwakeningsCount)
+            e.AwakeningTimes.RemoveAt(e.AwakeningTimes.Count - 1);
+    }
+
+    private static void SetAwakeningAt(SleepEntry e, int index, TimeOnly? value)
+    {
+        ResizeAwakenings(e);
+        if (index >= 0 && index < e.AwakeningTimes.Count)
+            e.AwakeningTimes[index] = value;
+    }
+
+    private static string FormatAwakeningTime(SleepEntry e, int index) =>
+        index >= e.AwakeningTimes.Count ? string.Empty : TimeFieldParsing.FormatTimeForInput(e.AwakeningTimes[index]);
+
+    private static string FormatDur(TimeSpan? ts) =>
+        ts is null ? "—" : SleepEntryFormatting.Duration(ts);
+
+    private Task AddAsync()
+    {
+        ResizeAwakenings(_draft);
+        var entry = CloneDraftToNewEntry(_draft);
+        Store.Add(entry);
+        _draft = CreateEmptyDraft();
+        ReloadYearsAndTable();
+        return Task.CompletedTask;
+    }
+
+    private void BeginEdit(SleepEntry row)
+    {
+        _editError = null;
+        _editModel = CloneEntry(row);
+        ResizeAwakenings(_editModel);
+    }
+
+    private void CancelEdit()
+    {
+        _editModel = null;
+        _editError = null;
+    }
+
+    private Task SaveEditAsync()
+    {
+        if (_editModel is null)
+            return Task.CompletedTask;
+
+        if (_editModel.NightAwakeningsCount < 0 || _editModel.FallAsleepAttempts < 0)
+        {
+            _editError = "Числовые поля не могут быть отрицательными.";
+            return Task.CompletedTask;
+        }
+
+        ResizeAwakenings(_editModel);
+        Store.Update(_editModel);
+        _editModel = null;
+        _editError = null;
+        ReloadYearsAndTable();
+        return Task.CompletedTask;
+    }
+
+    private Task DeleteAsync(Guid id)
+    {
+        if (_editModel?.Id == id)
+            CancelEdit();
+        Store.Delete(id);
+        ReloadYearsAndTable();
+        return Task.CompletedTask;
+    }
+
+    private static SleepEntry CreateEmptyDraft() => new()
+    {
+        EntryDate = DateOnly.FromDateTime(DateTime.Today),
+        NightAwakeningsCount = 0,
+        FallAsleepAttempts = 0,
+        AwakeningTimes = []
+    };
+
+    private static SleepEntry CloneDraftToNewEntry(SleepEntry d)
+    {
+        ResizeAwakenings(d);
+        return new SleepEntry
+        {
+            EntryDate = d.EntryDate,
+            FallAsleepTimeYesterday = d.FallAsleepTimeYesterday,
+            FinalWakeTime = d.FinalWakeTime,
+            NightAwakeningsCount = d.NightAwakeningsCount,
+            AwakeningTimes = [..d.AwakeningTimes],
+            FallAsleepAttempts = Math.Max(0, d.FallAsleepAttempts),
+            FoodBeforeSleep = d.FoodBeforeSleep,
+            FatigueBeforeSleep = d.FatigueBeforeSleep,
+            LyingAfterWake = d.LyingAfterWake,
+            AnxietyBeforeSleep = d.AnxietyBeforeSleep,
+            SleepSatisfaction = d.SleepSatisfaction,
+            SleepSatisfactionHalfDay = d.SleepSatisfactionHalfDay,
+            Comments = SleepEntryFormatting.OptionalString(d.Comments)
+        };
+    }
+
+    private static SleepEntry CloneEntry(SleepEntry s) => new()
+    {
+        Id = s.Id,
+        EntryDate = s.EntryDate,
+        FallAsleepTimeYesterday = s.FallAsleepTimeYesterday,
+        FinalWakeTime = s.FinalWakeTime,
+        NightAwakeningsCount = s.NightAwakeningsCount,
+        AwakeningTimes = [..s.AwakeningTimes],
+        FallAsleepAttempts = s.FallAsleepAttempts,
+        FoodBeforeSleep = s.FoodBeforeSleep,
+        FatigueBeforeSleep = s.FatigueBeforeSleep,
+        LyingAfterWake = s.LyingAfterWake,
+        AnxietyBeforeSleep = s.AnxietyBeforeSleep,
+        SleepSatisfaction = s.SleepSatisfaction,
+        SleepSatisfactionHalfDay = s.SleepSatisfactionHalfDay,
+        Comments = s.Comments
+    };
+
+    private static string SerializeFatigue(FatigueBeforeSleepLevel? v) =>
+        v switch
+        {
+            FatigueBeforeSleepLevel.None => "None",
+            FatigueBeforeSleepLevel.Strong => "Strong",
+            FatigueBeforeSleepLevel.Medium => "Medium",
+            FatigueBeforeSleepLevel.Weak => "Weak",
+            _ => ""
+        };
+
+    private static FatigueBeforeSleepLevel? ParseFatigue(string? raw) =>
+        raw switch
+        {
+            "None" => FatigueBeforeSleepLevel.None,
+            "Strong" => FatigueBeforeSleepLevel.Strong,
+            "Medium" => FatigueBeforeSleepLevel.Medium,
+            "Weak" => FatigueBeforeSleepLevel.Weak,
+            _ => null
+        };
+
+    private static string CellClassForYesNo(bool? v) => v switch
+    {
+        false => "sleep-cell sleep-cell--yesno-no",
+        true => "sleep-cell sleep-cell--yesno-yes",
+        _ => "sleep-cell"
+    };
+
+    private static string CellClassForSat(bool? v) => v switch
+    {
+        true => "sleep-cell sleep-cell--yesno-no",
+        false => "sleep-cell sleep-cell--sat-meh",
+        _ => "sleep-cell"
+    };
+
+    private static string CellClassForHalfDay(bool? v) => v switch
+    {
+        false => "sleep-cell sleep-cell--yesno-yes",
+        true => "sleep-cell sleep-cell--yesno-no",
+        _ => "sleep-cell"
+    };
+
+    private static string CellClassForFatigue(FatigueBeforeSleepLevel? v) => v switch
+    {
+        FatigueBeforeSleepLevel.None => "sleep-cell sleep-cell--fatigue-none",
+        FatigueBeforeSleepLevel.Strong => "sleep-cell sleep-cell--fatigue-strong",
+        FatigueBeforeSleepLevel.Medium => "sleep-cell sleep-cell--fatigue-medium",
+        FatigueBeforeSleepLevel.Weak => "sleep-cell sleep-cell--fatigue-weak",
+        _ => "sleep-cell"
+    };
+
+    private static string CellClassForSleepDur(TimeSpan? ts)
+    {
+        if (ts is null)
+            return "sleep-cell";
+        var h = ts.Value.TotalHours;
+        if (h >= 9)
+            return "sleep-cell sleep-cell--sleep-ok";
+        if (h >= 8)
+            return "sleep-cell sleep-cell--sleep-warn";
+        if (h >= 7)
+            return "sleep-cell sleep-cell--sleep-bad";
+        return "sleep-cell sleep-cell--sleep-short";
+    }
+}

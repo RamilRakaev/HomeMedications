@@ -1,0 +1,13 @@
+@inherits LayoutComponentBase
+
+<div class="page">
+    <main class="main">
+        <div class="shell">
+            <header class="app-nav" role="navigation" aria-label="Основное меню">
+                <NavLink class="app-nav__link" href="/" Match="NavLinkMatch.All">Приём лекарств</NavLink>
+                <NavLink class="app-nav__link" href="/sleep">Дневник сна</NavLink>
+            </header>
+            @Body
+        </div>
+    </main>
+</div>
