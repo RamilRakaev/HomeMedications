@@ -242,15 +242,15 @@
                             {
                                 <tr class="row-editing" @key="row.Id">
                                     <td><InputDate class="table-input" @bind-Value="_editModel.EntryDate" /></td>
-                                    <td><input type="time" class="table-input" step="60" value="@TimeFieldParsing.FormatTimeForInput(_editModel.FallAsleepTimeYesterday)" @onchange="@(e => _editModel.FallAsleepTimeYesterday = TimeFieldParsing.ParseTime(e.Value?.ToString()))" /></td>
-                                    <td><input type="time" class="table-input" step="60" value="@TimeFieldParsing.FormatTimeForInput(_editModel.FinalWakeTime)" @onchange="@(e => _editModel.FinalWakeTime = TimeFieldParsing.ParseTime(e.Value?.ToString()))" /></td>
+                                    <td><input class="table-input" step="60" value="@TimeFieldParsing.FormatTimeForInput(_editModel.FallAsleepTimeYesterday)" @onchange="@(e => _editModel.FallAsleepTimeYesterday = TimeFieldParsing.ParseTime(e.Value?.ToString()))" /></td>
+                                    <td><input class="table-input" step="60" value="@TimeFieldParsing.FormatTimeForInput(_editModel.FinalWakeTime)" @onchange="@(e => _editModel.FinalWakeTime = TimeFieldParsing.ParseTime(e.Value?.ToString()))" /></td>
                                     <td><InputNumber class="table-input" @bind-Value="_editModel.NightAwakeningsCount" @bind-Value:after="OnEditAwakeningsCountChanged" /></td>
                                     <td class="sleep-td-multiline">
                                         @for (var i = 0; i < _editModel.NightAwakeningsCount; i++)
                                         {
                                             var idx = i;
                                             <div class="sleep-inline-time">
-                                                <input type="time" class="table-input" step="60" value="@FormatAwakeningTime(_editModel, idx)" @onchange="@(e => OnEditAwakeningTimeChanged(idx, e))" />
+                                                <input class="table-input" step="60" value="@FormatAwakeningTime(_editModel, idx)" @onchange="@(e => OnEditAwakeningTimeChanged(idx, e))" />
                                             </div>
                                         }
                                     </td>
